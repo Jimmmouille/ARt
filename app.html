@@ -242,7 +242,7 @@ function updateFromControllers(){
     
     if(buttons.length > 0 && buttons[0].pressed){
       const controllerToUse = renderer.xr.getController(i);
-      const offsetPosition = controllerToUse.localToWorld(new THREE.Vector3(0, 0, 0.045));
+      const offsetPosition = controllerToUse.localToWorld(new THREE.Vector3(0, 0, -0.05));
       group.position.copy(offsetPosition);
       group.setRotationFromQuaternion(controllerToUse.quaternion);
       currentDepth = 0;
