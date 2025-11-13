@@ -100,7 +100,7 @@ scene.add(controller1);
 const controller2 = renderer.xr.getController(1);
 scene.add(controller2);
 
-async function loadTextureFromIndexedBB(){
+async function loadTextureFromIndexedDB(){
   const record = await idbGet(KEY);
   if(!record || !record.blob){
     const canvas = document.createElement('canvas');
@@ -241,10 +241,6 @@ function updateFromControllers(){
     }
     
     if(buttons.length > 0 && buttons[0].pressed){
-      const controllerToUse = renderer.xr.getController(i);
-      const offsetPosition = controllerToUse.localToWorld(new THREE.Vector3(0, 0, -0.05));
-      group.position.copy(offsetPosition);
-      group.setRotationFromQuaternion(controllerToUse.quaternion);
       currentDepth = 0;
     }
     
@@ -256,6 +252,7 @@ function updateFromControllers(){
       didPressHideInstructions = true;
     }
   }
+  if(group){ group.position.z = -0.1; }
   
   const shouldChangeInstructionsVisibility = (!didPressHideInstructions && previousDidPressHideInstructions);
   previousDidPressHideInstructions = didPressHideInstructions;
