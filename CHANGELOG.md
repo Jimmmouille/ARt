@@ -9,6 +9,23 @@
 | Zoom max | 4x | **20x** | **5x plus de zoom** |
 | Stockage | localStorage | **IndexedDB** | Support images volumineuses |
 
+### 🎮 Commandes VR complètes restaurées
+
+#### Contrôles joystick (3 fonctionnalités)
+- **Joystick gauche/droite** : Contrôle de l'opacité (0% - 100%)
+- **Joystick haut/bas** : Zoom/dézoom (0.1x - 20x)
+- **🆕 Joystick 2ème avant/arrière** : Contrôle de la profondeur (éloigner/rapprocher)
+
+#### Boutons VR
+- **Trigger (maintenir)** : Repositionner l'image dans l'espace
+- **A ou X** : Masquer/Afficher l'image
+- **B ou Y** : Masquer/Afficher le panneau d'instructions
+
+#### Interface AR
+- **Panneau d'instructions 3D** : Guide visuel des commandes en AR
+- **Shader Sobel** : Effet de contours pour meilleure visibilité
+- **Three-mesh-ui** : Interface 3D interactive
+
 ### 🆕 Fonctionnalités ajoutées
 
 #### 1. Sélecteur de qualité intelligent
