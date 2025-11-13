@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stencil AR – Viewer</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#000}
+#ui{position:fixed;inset:auto 12px 12px 12px;display:flex;gap:8px;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:12px;background:rgba(0,0,0,.45);backdrop-filter:blur(8px);color:#fff;z-index:5}
+label{font-size:12px;color:#d3d8de}
+input[type=range]{width:160px}
+.btn{appearance:none;border:0;border-radius:10px;padding:10px 12px;font-weight:600;background:#36a2ff;color:#06121a;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="ui">
+  <div style="display:flex;align-items:center;gap:10px">
+    <a class="btn" href="./index.html">Changer d'image</a>
+    <button id="reset" class="btn">Réinitialiser</button>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <label for="opacity">Opacité</label>
+    <input id="opacity" type="range" min="0" max="1" step="0.01" value="1">
+    <label for="scale">Échelle</label>
+    <input id="scale" type="range" min="0.1" max="20" step="0.01" value="1">
+  </div>
+</div>
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.147.0/build/three.module.js';
+import { ARButton } from 'https://unpkg.com/three@0.147.0/examples/jsm/webxr/ARButton.js';
+
+const DB_NAME = 'stencil-db';
+const STORE = 'images';
+const KEY = 'current';
+let currentScale = 1.0;
+let group = null;
+let mesh = null;
+let currentObjectURL = null;
+
+function openDB(){
+  return new Promise((resolve, reject)=>{
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if(!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbGet(key){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(STORE, 'readonly');
+    const store = tx.objectStore(STORE);
+    const req = store.get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures:['hit-test'] }));
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 100);
+
+const light = new THREE.HemisphereLight(0xffffff,0x222233,1.0);
+scene.add(light);
+
+group = new THREE.Group();
+scene.add(group);
+
+async function loadTextureFromIndexedDB(){
+  const record = await idbGet(KEY);
+  if(!record || !record.blob){
+    const canvas = document.createElement('canvas');
+    canvas.width = 2; canvas.height = 2;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,2,2);
+    return { texture: new THREE.CanvasTexture(canvas), width: 1, height: 1 };
+  }
+  if(currentObjectURL){ URL.revokeObjectURL(currentObjectURL); currentObjectURL = null; }
+  const url = URL.createObjectURL(record.blob);
+  currentObjectURL = url;
+  return new Promise((resolve)=>{
+    const loader = new THREE.TextureLoader();
+    loader.load(url, (tex)=>{
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.minFilter = THREE.LinearMipmapLinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      tex.generateMipmaps = true;
+      resolve({ texture: tex, width: record.width || (tex.image?.width||1), height: record.height || (tex.image?.height||1) });
+    }, undefined, ()=>{
+      const canvas = document.createElement('canvas');
+      canvas.width = 2; canvas.height = 2;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,2,2);
+      resolve({ texture: new THREE.CanvasTexture(canvas), width: 1, height: 1 });
+    });
+  });
+}
+
+async function createOrUpdateMesh(){
+  const { texture: tex, width, height } = await loadTextureFromIndexedDB();
+  const aspect = width && height ? width/height : 1;
+  const h = 1;
+  const w = h * aspect;
+  const geom = new THREE.PlaneGeometry(w, h);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 1 });
+  if(mesh){
+    group.remove(mesh);
+    mesh.geometry.dispose();
+    if(mesh.material.map) mesh.material.map.dispose();
+    mesh.material.dispose();
+  }
+  mesh = new THREE.Mesh(geom, mat);
+  mesh.renderOrder = 1;
+  group.add(mesh);
+  group.scale.set(currentScale, currentScale, currentScale);
+}
+
+function incrementScale(delta){
+  currentScale += delta;
+  currentScale = Math.min(Math.max(currentScale, 0.1), 20.0);
+  if(group){
+    group.scale.set(currentScale, currentScale, currentScale);
+  }
+}
+
+await createOrUpdateMesh();
+
+const opacityInput = document.getElementById('opacity');
+const scaleInput = document.getElementById('scale');
+const resetBtn = document.getElementById('reset');
+
+opacityInput.addEventListener('input', ()=>{ if(mesh) mesh.material.opacity = parseFloat(opacityInput.value) });
+scaleInput.addEventListener('input', ()=>{ currentScale = parseFloat(scaleInput.value); incrementScale(0) });
+resetBtn.addEventListener('click', ()=>{ currentScale = 1; incrementScale(0); opacityInput.value = '1'; if(mesh) mesh.material.opacity = 1; });
+
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+function updateFromControllers(){
+  const session = renderer.xr.getSession();
+  if(!session) return;
+  for(const source of session.inputSources){
+    if(!source.gamepad || !source.profiles) continue;
+    const axes = source.gamepad.axes || [];
+    const y = axes[3] !== undefined ? axes[3] : (axes[1] || 0);
+    if(Math.abs(y) > 0.01){
+      incrementScale(-y * 0.02);
+      scaleInput.value = String(currentScale.toFixed(2));
+    }
+  }
+}
+
+renderer.setAnimationLoop(()=>{
+  updateFromControllers();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

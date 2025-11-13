@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stencil AR – Import d'image</title>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif;margin:0;display:grid;min-height:100dvh;place-items:center;background:#0b0c10;color:#e6e6e6}
+.container{width:min(960px,92vw);padding:32px;border-radius:16px;background:rgba(255,255,255,0.04);box-shadow:0 10px 30px rgba(0,0,0,.35);backdrop-filter:blur(8px)}
+h1{margin:0 0 8px;font-size:28px}
+.hint{margin:8px 0 16px;color:#9bb0c8}
+.card{display:grid;gap:16px;padding:20px;border:1px solid rgba(255,255,255,0.08);border-radius:12px;background:rgba(255,255,255,0.03)}
+.actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+button, .btn{appearance:none;border:0;border-radius:10px;padding:12px 16px;font-weight:600;background:#36a2ff;color:#06121a;cursor:pointer;transition:transform .06s ease,opacity .2s;text-decoration:none;display:inline-block}
+button:hover,.btn:hover{transform:translateY(-1px)}
+button.secondary{background:#1c2630;color:#e6e6e6}
+button:disabled{opacity:.4;cursor:not-allowed;transform:none}
+input[type=file]{padding:14px;border:1px dashed rgba(255,255,255,.25);border-radius:10px;width:100%;background:rgba(255,255,255,.02);cursor:pointer}
+.preview{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.preview img{max-width:160px;max-height:160px;border-radius:8px;border:1px solid rgba(255,255,255,.1)}
+.meta{font-size:12px;color:#a7b4c3;line-height:1.6}
+select{appearance:none;padding:8px 12px;border:1px solid rgba(255,255,255,.15);border-radius:8px;background:rgba(255,255,255,.06);color:#e6e6e6;font-size:13px;cursor:pointer}
+select:hover{background:rgba(255,255,255,.09)}
+.badge{display:inline-block;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.badge.low{background:#1f7a1f;color:#7dff7d}
+.badge.med{background:#8a6d00;color:#ffeb3b}
+.badge.high{background:#8a1f1f;color:#ff7d7d}
+.stats{display:grid;gap:8px;margin-top:8px}
+.stat-line{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.stat-label{color:#9bb0c8;font-size:12px}
+.stat-value{color:#e6e6e6;font-size:12px;font-weight:500}
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>Stencil AR</h1>
+    <p class="hint">💡 L'image est stockée localement et optimisée automatiquement</p>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+        <label for="maxSize" style="font-size:13px;color:#9bb0c8">Taille max :</label>
+        <select id="maxSize">
+          <option value="4096">4096px (performances optimales)</option>
+          <option value="8192">8192px (équilibré)</option>
+          <option value="10240" selected>10240px (qualité maximale)</option>
+        </select>
+        <span id="perfBadge"></span>
+      </div>
+      <input id="file" type="file" accept="image/*">
+      <div class="actions">
+        <button id="clear" class="secondary">Effacer l'image</button>
+        <button id="reoptimize" class="secondary" style="display:none">Re-optimiser</button>
+        <a class="btn" href="./app.html">Ouvrir en AR</a>
+      </div>
+      <div id="preview" class="preview" style="display:none">
+        <img id="thumb" alt="aperçu">
+        <div style="flex:1">
+          <div id="meta" class="meta"></div>
+          <div id="status" class="meta" style="margin-top:4px"></div>
+          <div id="stats" class="stats"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const DB_NAME = 'stencil-db';
+const STORE = 'images';
+const KEY = 'current';
+const KEY_ORIGINAL = 'original';
+const PREF_KEY = 'stencil.maxSize';
+const input = document.getElementById('file');
+const clearBtn = document.getElementById('clear');
+const reoptimizeBtn = document.getElementById('reoptimize');
+const maxSizeSelect = document.getElementById('maxSize');
+const perfBadge = document.getElementById('perfBadge');
+const preview = document.getElementById('preview');
+const thumb = document.getElementById('thumb');
+const meta = document.getElementById('meta');
+const statusEl = document.getElementById('status');
+const statsEl = document.getElementById('stats');
+let currentURL = null;
+let originalData = null;
+
+function openDB(){
+  return new Promise((resolve, reject)=>{
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if(!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbGet(key){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(STORE, 'readonly');
+    const store = tx.objectStore(STORE);
+    const req = store.get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbSet(key, value){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(STORE, 'readwrite');
+    const store = tx.objectStore(STORE);
+    const req = store.put(value, key);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbDelete(key){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(STORE, 'readwrite');
+    const store = tx.objectStore(STORE);
+    const req = store.delete(key);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function updatePerfBadge(){
+  const max = parseInt(maxSizeSelect.value, 10);
+  let level, label;
+  if(max <= 4096){ level = 'low'; label = '🟢 Charge faible'; }
+  else if(max <= 8192){ level = 'med'; label = '🟡 Charge moyenne'; }
+  else{ level = 'high'; label = '🔴 Charge élevée'; }
+  perfBadge.innerHTML = `<span class="badge ${level}">${label}</span>`;
+}
+
+function optimizeAndStore(dataUrl, name, origWidth, origHeight){
+  const img = new Image();
+  img.onload = async () => {
+    const max = parseInt(maxSizeSelect.value, 10);
+    const originalW = origWidth || img.width;
+    const originalH = origHeight || img.height;
+    let w = img.width, h = img.height;
+    let wasResized = false;
+    if (w > max || h > max){
+      const scale = Math.min(max / w, max / h);
+      w = Math.round(w * scale);
+      h = Math.round(h * scale);
+      wasResized = true;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    canvas.toBlob(async (blob)=>{
+      if(!blob){ statusEl.textContent = "⚠️ Échec de l'optimisation"; return; }
+      const record = { 
+        blob, 
+        name: name || 'image', 
+        width: w, 
+        height: h, 
+        originalWidth: originalW, 
+        originalHeight: originalH,
+        mime: 'image/jpeg', 
+        updated: Date.now() 
+      };
+      try{
+        await idbSet(KEY, record);
+        if(!origWidth && originalData === null){
+          originalData = { dataUrl, name, width: originalW, height: originalH };
+          await idbSet(KEY_ORIGINAL, originalData);
+        }
+        localStorage.setItem(PREF_KEY, maxSizeSelect.value);
+        showPreview(record, wasResized);
+        statusEl.textContent = '✓ Image enregistrée';
+        reoptimizeBtn.style.display = 'inline-block';
+      }catch(e){
+        statusEl.textContent = '⚠️ Échec de l\'enregistrement (IndexedDB)';
+      }
+    }, 'image/jpeg', 0.92);
+  };
+  img.src = dataUrl;
+}
+
+function showPreview(record, wasResized){
+  if(currentURL){ URL.revokeObjectURL(currentURL); currentURL = null; }
+  preview.style.display = 'flex';
+  const url = URL.createObjectURL(record.blob);
+  currentURL = url;
+  thumb.src = url;
+  const size = record.blob.size;
+  const aspect = (record.width / record.height).toFixed(2);
+  meta.textContent = `${record.name} — ${record.width}×${record.height}px — ${(size/1024/1024).toFixed(2)} Mo`;
+  
+  const origW = record.originalWidth || record.width;
+  const origH = record.originalHeight || record.height;
+  const compressionRatio = wasResized ? ((origW * origH) / (record.width * record.height)).toFixed(2) : '1.00';
+  
+  statsEl.innerHTML = `
+    <div class="stat-line">
+      <span class="stat-label">Résolution originale</span>
+      <span class="stat-value">${origW}×${origH}px</span>
+    </div>
+    <div class="stat-line">
+      <span class="stat-label">Résolution optimisée</span>
+      <span class="stat-value">${record.width}×${record.height}px</span>
+    </div>
+    <div class="stat-line">
+      <span class="stat-label">Ratio d'aspect</span>
+      <span class="stat-value">${aspect}:1</span>
+    </div>
+    <div class="stat-line">
+      <span class="stat-label">Facteur de réduction</span>
+      <span class="stat-value">${compressionRatio}x</span>
+    </div>
+  `;
+}
+
+input.addEventListener('change', (e)=>{
+  const file = e.target.files && e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    originalData = null;
+    optimizeAndStore(reader.result, file.name);
+  };
+  reader.readAsDataURL(file);
+});
+
+clearBtn.addEventListener('click', async ()=>{
+  await idbDelete(KEY);
+  await idbDelete(KEY_ORIGINAL);
+  if(currentURL){ URL.revokeObjectURL(currentURL); currentURL = null; }
+  preview.style.display = 'none';
+  statusEl.textContent = '';
+  reoptimizeBtn.style.display = 'none';
+  originalData = null;
+});
+
+reoptimizeBtn.addEventListener('click', async ()=>{
+  if(!originalData){
+    const orig = await idbGet(KEY_ORIGINAL);
+    if(orig) originalData = orig;
+  }
+  if(originalData){
+    statusEl.textContent = '⏳ Re-optimisation...';
+    optimizeAndStore(originalData.dataUrl, originalData.name, originalData.width, originalData.height);
+  }
+});
+
+maxSizeSelect.addEventListener('change', ()=>{
+  updatePerfBadge();
+});
+
+(async function init(){
+  updatePerfBadge();
+  const savedPref = localStorage.getItem(PREF_KEY);
+  if(savedPref && ['4096','8192','10240'].includes(savedPref)){
+    maxSizeSelect.value = savedPref;
+    updatePerfBadge();
+  }
+  const saved = await idbGet(KEY);
+  if(saved){ 
+    const origW = saved.originalWidth || saved.width;
+    const origH = saved.originalHeight || saved.height;
+    const wasResized = (origW !== saved.width || origH !== saved.height);
+    showPreview(saved, wasResized);
+    reoptimizeBtn.style.display = 'inline-block';
+    return; 
+  }
+  const lsData = localStorage.getItem('stencil.image');
+  const lsName = localStorage.getItem('stencil.imageName') || 'image';
+  if(lsData){
+    try{
+      const res = await fetch(lsData);
+      const blob = await res.blob();
+      const img = new Image();
+      img.onload = async ()=>{
+        const record = { 
+          blob, 
+          name: lsName, 
+          width: img.width, 
+          height: img.height, 
+          originalWidth: img.width, 
+          originalHeight: img.height,
+          mime: blob.type || 'image/jpeg', 
+          updated: Date.now() 
+        };
+        await idbSet(KEY, record);
+        localStorage.removeItem('stencil.image');
+        localStorage.removeItem('stencil.imageName');
+        showPreview(record, false);
+      };
+      img.src = lsData;
+    }catch(e){}
+  }
+})();
+</script>
+</body>
+</html>
