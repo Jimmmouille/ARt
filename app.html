@@ -61,4 +61,221 @@ function openDB(){
   });
 }
 
-...
+async function idbGet(key){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(STORE, 'readonly');
+    const store = tx.objectStore(STORE);
+    const req = store.get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+renderer.xr.setFoveation(0);
+document.body.appendChild(renderer.domElement);
+
+document.body.appendChild(ARButton.createButton(renderer, { 
+  requiredFeatures:['local-floor'],
+  optionalFeatures:['hand-tracking', 'depth-sensing']
+}));
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 100);
+
+const light = new THREE.HemisphereLight(0xffffff,0x222233,1.0);
+scene.add(light);
+
+group = new THREE.Group();
+group.position.set(0, 0, -0.5);
+scene.add(group);
+
+const controller1 = renderer.xr.getController(0);
+scene.add(controller1);
+
+const controller2 = renderer.xr.getController(1);
+scene.add(controller2);
+
+async function loadTextureFromIndexedDB(){
+  const record = await idbGet(KEY);
+  if(!record || !record.blob){
+    const canvas = document.createElement('canvas');
+    canvas.width = 512; canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#667eea'; 
+    ctx.fillRect(0,0,512,256);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 32px system-ui';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Stencil AR v2.0', 256, 100);
+    ctx.font = '16px system-ui';
+    ctx.fillText('Chargez une image depuis l\'accueil', 256, 140);
+    return { texture: new THREE.CanvasTexture(canvas), width: 2, height: 1 };
+  }
+  if(currentObjectURL){ URL.revokeObjectURL(currentObjectURL); currentObjectURL = null; }
+  const url = URL.createObjectURL(record.blob);
+  currentObjectURL = url;
+  return new Promise((resolve)=>{
+    const loader = new THREE.TextureLoader();
+    loader.load(url, (tex)=>{
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.minFilter = THREE.LinearMipmapLinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      tex.generateMipmaps = true;
+      resolve({ texture: tex, width: record.width || (tex.image?.width||1), height: record.height || (tex.image?.height||1) });
+    }, undefined, ()=>{
+      const canvas = document.createElement('canvas');
+      canvas.width = 2; canvas.height = 2;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,2,2);
+      resolve({ texture: new THREE.CanvasTexture(canvas), width: 1, height: 1 });
+    });
+  });
+}
+
+async function createOrUpdateMesh(){
+  const { texture: tex, width, height } = await loadTextureFromIndexedDB();
+  const aspect = width && height ? width/height : 1;
+  const h = 0.25;
+  const w = h * aspect;
+  const geom = new THREE.PlaneGeometry(w, h);
+  const mat = new THREE.MeshBasicMaterial({ 
+    map: tex, 
+    transparent: true, 
+    opacity: currentOpacity,
+    side: THREE.DoubleSide 
+  });
+  if(mesh){
+    group.remove(mesh);
+    mesh.geometry.dispose();
+    if(mesh.material.map) mesh.material.map.dispose();
+    mesh.material.dispose();
+  }
+  mesh = new THREE.Mesh(geom, mat);
+  mesh.renderOrder = 1;
+  group.add(mesh);
+  group.scale.set(currentScale, currentScale, currentScale);
+  
+  setTimeout(() => {
+    const loading = document.getElementById('loading');
+    if (loading) loading.style.display = 'none';
+  }, 500);
+}
+
+function incrementScale(delta){
+  currentScale += delta;
+  currentScale = Math.min(Math.max(currentScale, 0.1), 20.0);
+  if(group){
+    group.scale.set(currentScale, currentScale, currentScale);
+  }
+}
+
+function incrementOpacity(delta){
+  currentOpacity += delta;
+  currentOpacity = Math.min(Math.max(currentOpacity, 0.0), 1.0);
+  if(mesh){
+    mesh.material.opacity = currentOpacity;
+  }
+}
+
+function incrementDepth(delta){
+  currentDepth += delta;
+  currentDepth = Math.min(Math.max(currentDepth, -5.0), 5.0);
+  if(group){
+    const baseZ = -0.5;
+    group.position.z = baseZ + currentDepth;
+  }
+}
+
+await createOrUpdateMesh();
+
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight; 
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+function updateFromControllers(){
+  const session = renderer.xr.getSession();
+  if(!session) return;
+  
+  const elapsedTime = clock.getDelta();
+  let didPressHideImage = false;
+  let didPressHideInstructions = false;
+
+  for(let i = 0; i < session.inputSources.length; i++){
+    const source = session.inputSources[i];
+    if(!source.gamepad) continue;
+    
+    const gamepad = source.gamepad;
+    const axes = gamepad.axes || [];
+    const buttons = gamepad.buttons || [];
+    
+    if(axes.length >= 4){
+      const horizontalRight = axes[2];
+      const verticalRight = axes[3];
+      const verticalLeft = axes[1];
+      
+      if(verticalRight < -0.7){
+        incrementScale(1.0 * elapsedTime);
+      } else if(verticalRight > 0.7){
+        incrementScale(-1.0 * elapsedTime);
+      }
+      
+      if(horizontalRight > 0.7){
+        incrementOpacity(1.0 * elapsedTime);
+      } else if(horizontalRight < -0.7){
+        incrementOpacity(-1.0 * elapsedTime);
+      }
+      
+      if(verticalLeft < -0.7){
+        incrementDepth(-1.0 * elapsedTime);
+      } else if(verticalLeft > 0.7){
+        incrementDepth(1.0 * elapsedTime);
+      }
+    }
+    
+    if(buttons.length > 0 && buttons[0].pressed){
+      const controllerToUse = renderer.xr.getController(i);
+      const offsetPosition = controllerToUse.localToWorld(new THREE.Vector3(0, 0, 0.045));
+      group.position.copy(offsetPosition);
+      group.setRotationFromQuaternion(controllerToUse.quaternion);
+      currentDepth = 0;
+    }
+    
+    if(buttons.length > 4 && buttons[4].pressed){
+      didPressHideImage = true;
+    }
+    
+    if(buttons.length > 5 && buttons[5].pressed){
+      didPressHideInstructions = true;
+    }
+  }
+  
+  const shouldChangeInstructionsVisibility = (!didPressHideInstructions && previousDidPressHideInstructions);
+  previousDidPressHideInstructions = didPressHideInstructions;
+  
+  if(shouldChangeInstructionsVisibility && instructionsEl){
+    instructionsEl.style.display = instructionsEl.style.display === 'none' ? 'block' : 'none';
+  }
+  
+  const shouldChangeImageVisibility = (!didPressHideImage && previousDidPressHideImage);
+  previousDidPressHideImage = didPressHideImage;
+  
+  if(shouldChangeImageVisibility && mesh){
+    mesh.visible = !mesh.visible;
+  }
+}
+
+renderer.setAnimationLoop(()=>{
+  updateFromControllers();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
