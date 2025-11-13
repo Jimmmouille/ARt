@@ -216,39 +216,31 @@ function updateFromControllers(){
     const axes = gamepad.axes || [];
     const buttons = gamepad.buttons || [];
     
-    // Distinguer manette gauche et droite
-    if(source.handedness === 'left' && axes.length >= 2){
-      // Manette gauche : contrôle de profondeur (avancer/reculer)
-      const vertical = axes[1]; // Axe Y du joystick gauche
+    if(axes.length >= 4){
+      const horizontalRight = axes[2];
+      const verticalRight = axes[3];
+      const verticalLeft = axes[1];
       
-      if(vertical < -0.7){
-        incrementDepth(-1.0 * elapsedTime); // Joystick vers le haut = reculer
-      } else if(vertical > 0.7){
-        incrementDepth(1.0 * elapsedTime); // Joystick vers le bas = avancer
-      }
-    } else if(source.handedness === 'right' && axes.length >= 2){
-      // Manette droite : contrôles de zoom et opacité
-      const horizontal = axes[0]; // Axe X du joystick droit
-      const vertical = axes[1];   // Axe Y du joystick droit
-      
-      // Zoom avec joystick vertical
-      if(vertical < -0.7){
-        incrementScale(1.0 * elapsedTime); // Joystick vers le haut = zoom in
-      } else if(vertical > 0.7){
-        incrementScale(-1.0 * elapsedTime); // Joystick vers le bas = zoom out
+      if(verticalRight < -0.7){
+        incrementScale(1.0 * elapsedTime);
+      } else if(verticalRight > 0.7){
+        incrementScale(-1.0 * elapsedTime);
       }
       
-      // Opacité avec joystick horizontal
-      if(horizontal > 0.7){
-        incrementOpacity(1.0 * elapsedTime); // Joystick vers la droite = plus opaque
-      } else if(horizontal < -0.7){
-        incrementOpacity(-1.0 * elapsedTime); // Joystick vers la gauche = plus transparent
+      if(horizontalRight > 0.7){
+        incrementOpacity(1.0 * elapsedTime);
+      } else if(horizontalRight < -0.7){
+        incrementOpacity(-1.0 * elapsedTime);
+      }
+      
+      if(verticalLeft < -0.7){
+        incrementDepth(-1.0 * elapsedTime);
+      } else if(verticalLeft > 0.7){
+        incrementDepth(1.0 * elapsedTime);
       }
     }
     
-    // Boutons (fonctionnent sur les deux manettes)
     if(buttons.length > 0 && buttons[0].pressed){
-      // Trigger : repositionner l'image
       const controllerToUse = renderer.xr.getController(i);
       const offsetPosition = controllerToUse.localToWorld(new THREE.Vector3(0, 0, 0.045));
       group.position.copy(offsetPosition);
@@ -257,12 +249,10 @@ function updateFromControllers(){
     }
     
     if(buttons.length > 4 && buttons[4].pressed){
-      // Bouton A/X : masquer/afficher l'image
       didPressHideImage = true;
     }
     
     if(buttons.length > 5 && buttons[5].pressed){
-      // Bouton B/Y : masquer/afficher l'aide
       didPressHideInstructions = true;
     }
   }
