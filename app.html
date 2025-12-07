@@ -138,6 +138,7 @@ function createInstructionsPanel(){
     'Trigger : Repositionner',
     'Joystick press : Verrouiller',
     'A/X : Masquer image',
+    'Grip + A/X : Déplacer ce panneau',
     'B/Y : Masquer/afficher aide'
   ];
   
@@ -341,7 +342,16 @@ function updateFromControllers(){
     }
     
     if(buttons.length > 4 && buttons[4].pressed){
-      didPressHideImage = true;
+      if(gripPressed && instructionsPanel && instructionsPanel.visible){
+        const controllerToUse = renderer.xr.getController(i);
+        const panelOffset = controllerToUse.localToWorld(new THREE.Vector3(0.15, 0.1, -0.2));
+        instructionsPanel.position.copy(panelOffset);
+        const lookDir = new THREE.Vector3();
+        controllerToUse.getWorldDirection(lookDir);
+        instructionsPanel.lookAt(instructionsPanel.position.clone().sub(lookDir));
+      } else {
+        didPressHideImage = true;
+      }
     }
     
     if(buttons.length > 5 && buttons[5] && buttons[5].pressed){
