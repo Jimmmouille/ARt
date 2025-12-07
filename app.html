@@ -41,6 +41,8 @@ const KEY = 'current';
 let currentScale = 1.0;
 let currentOpacity = 1.0;
 let currentDepth = 0;
+let referencePosition = new THREE.Vector3();
+let referenceQuaternion = new THREE.Quaternion();
 let group = null;
 let mesh = null;
 let currentObjectURL = null;
@@ -187,8 +189,9 @@ function incrementDepth(delta){
   currentDepth += delta;
   currentDepth = Math.min(Math.max(currentDepth, -5.0), 5.0);
   if(group){
-    const baseZ = -0.5;
-    group.position.z = baseZ + currentDepth;
+    const offset = new THREE.Vector3(0, 0, currentDepth);
+    offset.applyQuaternion(referenceQuaternion);
+    group.position.copy(referencePosition).add(offset);
   }
 }
 
@@ -246,6 +249,8 @@ function updateFromControllers(){
       const offsetPosition = controllerToUse.localToWorld(new THREE.Vector3(0, 0, 0.045));
       group.position.copy(offsetPosition);
       group.setRotationFromQuaternion(controllerToUse.quaternion);
+      referencePosition.copy(group.position);
+      referenceQuaternion.copy(group.quaternion);
       currentDepth = 0;
     }
     
