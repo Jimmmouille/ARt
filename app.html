@@ -25,10 +25,13 @@ html,body{margin:0;height:100%;overflow:hidden;background:#000}
     <li><span class="key">Joystick ⬅️➡️</span> Opacité</li>
     <li><span class="key">Grip + Joystick ⬆️⬇️</span> Profondeur (repousser/avancer)</li>
     <li><span class="key">Trigger</span> Repositionner</li>
+    <li><span class="key">Joystick press</span> Verrouiller position</li>
     <li><span class="key">A/X</span> Masquer image</li>
     <li><span class="key">B/Y</span> Masquer aide</li>
   </ul>
 </div>
+
+<div id="lockIndicator" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:24px 32px;background:rgba(255,193,7,.95);border-radius:16px;color:#000;font-family:system-ui;font-size:20px;font-weight:bold;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,.3);">🔒 Position verrouillée</div>
 
 <script type="module">
 import * as THREE from 'https://unpkg.com/three@0.147.0/build/three.module.js';
@@ -43,6 +46,8 @@ let currentOpacity = 1.0;
 let currentDepth = 0;
 let referencePosition = new THREE.Vector3();
 let referenceQuaternion = new THREE.Quaternion();
+let isLocked = false;
+let previousDidPressLock = false;
 let group = null;
 let mesh = null;
 let currentObjectURL = null;
@@ -50,6 +55,7 @@ let clock = new THREE.Clock();
 let previousDidPressHideImage = false;
 let previousDidPressHideInstructions = false;
 const instructionsEl = document.getElementById('instructions');
+let lockIndicatorEl = null;
 
 function openDB(){
   return new Promise((resolve, reject)=>{
@@ -197,6 +203,8 @@ function incrementDepth(delta){
 
 await createOrUpdateMesh();
 
+lockIndicatorEl = document.getElementById('lockIndicator');
+
 window.addEventListener('resize', ()=>{
   camera.aspect = window.innerWidth/window.innerHeight; 
   camera.updateProjectionMatrix();
@@ -210,6 +218,7 @@ function updateFromControllers(){
   const elapsedTime = clock.getDelta();
   let didPressHideImage = false;
   let didPressHideInstructions = false;
+  let didPressLock = false;
 
   for(let i = 0; i < session.inputSources.length; i++){
     const source = session.inputSources[i];
@@ -224,13 +233,13 @@ function updateFromControllers(){
     const verticalAxis = axes.length >= 4 ? axes[3] : (axes.length >= 2 ? axes[1] : 0);
     const horizontalAxis = axes.length >= 4 ? axes[2] : (axes.length >= 2 ? axes[0] : 0);
     
-    if(gripPressed){
+    if(!isLocked && gripPressed){
       if(verticalAxis < -0.7){
         incrementDepth(-1.0 * elapsedTime);
       } else if(verticalAxis > 0.7){
         incrementDepth(1.0 * elapsedTime);
       }
-    } else {
+    } else if(!gripPressed) {
       if(verticalAxis < -0.7){
         incrementScale(1.0 * elapsedTime);
       } else if(verticalAxis > 0.7){
@@ -244,7 +253,7 @@ function updateFromControllers(){
       incrementOpacity(-1.0 * elapsedTime);
     }
     
-    if(buttons.length > 0 && buttons[0].pressed){
+    if(!isLocked && buttons.length > 0 && buttons[0].pressed){
       const controllerToUse = renderer.xr.getController(i);
       const offsetPosition = controllerToUse.localToWorld(new THREE.Vector3(0, 0, 0.045));
       group.position.copy(offsetPosition);
@@ -252,6 +261,10 @@ function updateFromControllers(){
       referencePosition.copy(group.position);
       referenceQuaternion.copy(group.quaternion);
       currentDepth = 0;
+    }
+    
+    if(buttons.length > 3 && buttons[3].pressed){
+      didPressLock = true;
     }
     
     if(buttons.length > 4 && buttons[4].pressed){
@@ -262,6 +275,22 @@ function updateFromControllers(){
       didPressHideInstructions = true;
     }
   }
+  
+  const shouldToggleLock = (!didPressLock && previousDidPressLock);
+  previousDidPressLock = didPressLock;
+  
+  if(shouldToggleLock){
+    isLocked = !isLocked;
+    if(lockIndicatorEl){
+      lockIndicatorEl.style.display = isLocked ? 'block' : 'none';
+      if(isLocked){
+        setTimeout(() => {
+          if(lockIndicatorEl && isLocked) lockIndicatorEl.style.display = 'none';
+        }, 2000);
+      }
+    }
+  }
+  
   
   const shouldChangeInstructionsVisibility = (!didPressHideInstructions && previousDidPressHideInstructions);
   previousDidPressHideInstructions = didPressHideInstructions;
