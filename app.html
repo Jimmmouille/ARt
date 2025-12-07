@@ -23,7 +23,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#000}
   <ul>
     <li><span class="key">Joystick ⬆️⬇️</span> Zoom (0.1x-20x)</li>
     <li><span class="key">Joystick ⬅️➡️</span> Opacité</li>
-    <li><span class="key">Joystick 2 ⬆️⬇️</span> Profondeur</li>
+    <li><span class="key">Grip + Joystick ⬆️⬇️</span> Profondeur (repousser/avancer)</li>
     <li><span class="key">Trigger</span> Repositionner</li>
     <li><span class="key">A/X</span> Masquer image</li>
     <li><span class="key">B/Y</span> Masquer aide</li>
@@ -216,28 +216,29 @@ function updateFromControllers(){
     const axes = gamepad.axes || [];
     const buttons = gamepad.buttons || [];
     
-    if(axes.length >= 4){
-      const horizontalRight = axes[2];
-      const verticalRight = axes[3];
-      const verticalLeft = axes[1];
-      
-      if(verticalRight < -0.7){
-        incrementScale(1.0 * elapsedTime);
-      } else if(verticalRight > 0.7){
-        incrementScale(-1.0 * elapsedTime);
-      }
-      
-      if(horizontalRight > 0.7){
-        incrementOpacity(1.0 * elapsedTime);
-      } else if(horizontalRight < -0.7){
-        incrementOpacity(-1.0 * elapsedTime);
-      }
-      
-      if(verticalLeft < -0.7){
+    const gripPressed = buttons.length > 1 && buttons[1].pressed;
+    
+    const verticalAxis = axes.length >= 4 ? axes[3] : (axes.length >= 2 ? axes[1] : 0);
+    const horizontalAxis = axes.length >= 4 ? axes[2] : (axes.length >= 2 ? axes[0] : 0);
+    
+    if(gripPressed){
+      if(verticalAxis < -0.7){
         incrementDepth(-1.0 * elapsedTime);
-      } else if(verticalLeft > 0.7){
+      } else if(verticalAxis > 0.7){
         incrementDepth(1.0 * elapsedTime);
       }
+    } else {
+      if(verticalAxis < -0.7){
+        incrementScale(1.0 * elapsedTime);
+      } else if(verticalAxis > 0.7){
+        incrementScale(-1.0 * elapsedTime);
+      }
+    }
+    
+    if(horizontalAxis > 0.7){
+      incrementOpacity(1.0 * elapsedTime);
+    } else if(horizontalAxis < -0.7){
+      incrementOpacity(-1.0 * elapsedTime);
     }
     
     if(buttons.length > 0 && buttons[0].pressed){
