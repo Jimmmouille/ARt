@@ -27,7 +27,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:#000}
     <li><span class="key">Trigger</span> Repositionner</li>
     <li><span class="key">Joystick press</span> Verrouiller position</li>
     <li><span class="key">A/X</span> Masquer image</li>
-    <li><span class="key">B/Y</span> Masquer aide</li>
+    <li><span class="key">B/Y</span> Masquer/afficher aide</li>
+    <li style="font-size:11px;color:#888;margin-top:4px;">💡 Maintenez Grip 2s pour réafficher l'aide</li>
   </ul>
 </div>
 
@@ -48,6 +49,7 @@ let referencePosition = new THREE.Vector3();
 let referenceQuaternion = new THREE.Quaternion();
 let isLocked = false;
 let previousDidPressLock = false;
+let gripHoldTime = 0;
 let group = null;
 let mesh = null;
 let currentObjectURL = null;
@@ -230,6 +232,16 @@ function updateFromControllers(){
     
     const gripPressed = buttons.length > 1 && buttons[1].pressed;
     
+    if(gripPressed){
+      gripHoldTime += elapsedTime;
+      if(gripHoldTime > 2.0 && instructionsEl && instructionsEl.style.display === 'none'){
+        instructionsEl.style.display = 'block';
+        gripHoldTime = 0;
+      }
+    } else {
+      gripHoldTime = 0;
+    }
+    
     const verticalAxis = axes.length >= 4 ? axes[3] : (axes.length >= 2 ? axes[1] : 0);
     const horizontalAxis = axes.length >= 4 ? axes[2] : (axes.length >= 2 ? axes[0] : 0);
     
@@ -271,7 +283,7 @@ function updateFromControllers(){
       didPressHideImage = true;
     }
     
-    if(buttons.length > 5 && buttons[5].pressed){
+    if(buttons.length > 5 && buttons[5] && buttons[5].pressed){
       didPressHideInstructions = true;
     }
   }
