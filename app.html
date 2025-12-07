@@ -58,6 +58,7 @@ let previousDidPressHideImage = false;
 let previousDidPressHideInstructions = false;
 const instructionsEl = document.getElementById('instructions');
 let lockIndicatorEl = null;
+let instructionsPanel = null;
 
 function openDB(){
   return new Promise((resolve, reject)=>{
@@ -109,6 +110,66 @@ scene.add(controller1);
 
 const controller2 = renderer.xr.getController(1);
 scene.add(controller2);
+
+function createInstructionsPanel(){
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+  ctx.fillRect(0, 0, 512, 512);
+  
+  ctx.strokeStyle = 'rgba(54, 162, 255, 0.3)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(5, 5, 502, 502);
+  
+  ctx.fillStyle = '#36a2ff';
+  ctx.font = 'bold 28px system-ui';
+  ctx.fillText('Commandes VR', 20, 40);
+  
+  ctx.fillStyle = '#ffd700';
+  ctx.font = '18px system-ui';
+  let y = 80;
+  const lines = [
+    'Joystick ↑↓ : Zoom (0.1x-20x)',
+    'Joystick ←→ : Opacité',
+    'Grip + Joystick ↑↓ : Profondeur',
+    'Trigger : Repositionner',
+    'Joystick press : Verrouiller',
+    'A/X : Masquer image',
+    'B/Y : Masquer/afficher aide'
+  ];
+  
+  ctx.fillStyle = '#d3d8de';
+  ctx.font = '16px system-ui';
+  lines.forEach(line => {
+    ctx.fillText('▸ ' + line, 25, y);
+    y += 35;
+  });
+  
+  ctx.fillStyle = '#888';
+  ctx.font = '14px system-ui';
+  ctx.fillText('💡 Maintenez Grip 2s pour réafficher', 25, y + 20);
+  
+  const texture = new THREE.CanvasTexture(canvas);
+  const geometry = new THREE.PlaneGeometry(0.3, 0.3);
+  const material = new THREE.MeshBasicMaterial({ 
+    map: texture, 
+    transparent: true,
+    side: THREE.DoubleSide,
+    opacity: 0.95
+  });
+  
+  const panel = new THREE.Mesh(geometry, material);
+  panel.position.set(0.25, 0.15, -0.4);
+  panel.visible = true;
+  
+  return panel;
+}
+
+instructionsPanel = createInstructionsPanel();
+scene.add(instructionsPanel);
 
 async function loadTextureFromIndexedDB(){
   const record = await idbGet(KEY);
@@ -234,8 +295,8 @@ function updateFromControllers(){
     
     if(gripPressed){
       gripHoldTime += elapsedTime;
-      if(gripHoldTime > 2.0 && instructionsEl && instructionsEl.style.display === 'none'){
-        instructionsEl.style.display = 'block';
+      if(gripHoldTime > 2.0 && instructionsPanel && !instructionsPanel.visible){
+        instructionsPanel.visible = true;
         gripHoldTime = 0;
       }
     } else {
@@ -307,8 +368,8 @@ function updateFromControllers(){
   const shouldChangeInstructionsVisibility = (!didPressHideInstructions && previousDidPressHideInstructions);
   previousDidPressHideInstructions = didPressHideInstructions;
   
-  if(shouldChangeInstructionsVisibility && instructionsEl){
-    instructionsEl.style.display = instructionsEl.style.display === 'none' ? 'block' : 'none';
+  if(shouldChangeInstructionsVisibility && instructionsPanel){
+    instructionsPanel.visible = !instructionsPanel.visible;
   }
   
   const shouldChangeImageVisibility = (!didPressHideImage && previousDidPressHideImage);
