@@ -298,7 +298,7 @@ function incrementRotation(delta){
 function moveOnWall(horizontal, vertical){
   if(!group || wallNormal.lengthSq() === 0) return;
   
-  const moveSpeed = 0.3;
+  const moveSpeed = 0.15;
   const moveVec = new THREE.Vector3();
   moveVec.addScaledVector(wallRight, horizontal * moveSpeed);
   moveVec.addScaledVector(wallUp, vertical * moveSpeed);
@@ -529,18 +529,18 @@ function updateFromControllers(){
     if(!isLocked){
       if(gripPressed && !triggerPressed){
         if(Math.abs(verticalAxis) > 0.2 || Math.abs(horizontalAxis) > 0.2){
-          moveOnWall(horizontalAxis * elapsedTime, -verticalAxis * elapsedTime);
+          moveOnWall(horizontalAxis * elapsedTime * 0.5, -verticalAxis * elapsedTime * 0.5);
         }
       } else if(triggerPressed && !gripPressed){
         if(Math.abs(horizontalAxis) > 0.2){
-          incrementRotation(horizontalAxis * 2.5 * elapsedTime);
+          incrementRotation(horizontalAxis * 1.2 * elapsedTime);
         }
       } else if(!gripPressed && !triggerPressed){
         const absV = Math.abs(verticalAxis);
         const absH = Math.abs(horizontalAxis);
         
         if(absV > 0.2 && absV > absH){
-          incrementScale(verticalAxis * -3.0 * elapsedTime);
+          incrementScale(verticalAxis * -1.5 * elapsedTime);
         } else if(absH > 0.2 && absH > absV){
           incrementOpacity(horizontalAxis * 1.0 * elapsedTime);
         }
