@@ -22,11 +22,9 @@ html,body{margin:0;height:100%;overflow:hidden;background:#000}
   <h3>Commandes VR</h3>
   <ul>
     <li><span class="key">Grip + Trigger</span> Plaquer au mur</li>
-    <li><span class="key">Joystick ⬆️⬇️</span> Déplacer haut/bas</li>
+    <li><span class="key">Joystick ⬆️⬇️</span> Zoom</li>
     <li><span class="key">Joystick ⬅️➡️</span> Opacité</li>
-    <li><span class="key">Grip + Joystick ⬆️⬇️</span> Zoom</li>
-    <li><span class="key">Grip + Joystick ⬅️➡️</span> Rotation</li>
-    <li><span class="key">Trigger + Joystick ⬅️➡️</span> Déplacer G/D</li>
+    <li><span class="key">Grip + Joystick</span> Déplacer image</li>
     <li><span class="key">Joystick press</span> Verrouiller</li>
     <li><span class="key">A/X</span> Masquer image</li>
     <li><span class="key">B/Y</span> Aide</li>
@@ -151,11 +149,9 @@ function createInstructionsPanel(){
   let y = 80;
   const lines = [
     'Grip + Trigger : Plaquer au mur',
-    'Joystick ↑↓ : Déplacer haut/bas',
+    'Joystick ↑↓ : Zoom',
     'Joystick ←→ : Opacité',
-    'Grip + Joystick ↑↓ : Zoom',
-    'Grip + Joystick ←→ : Rotation',
-    'Trigger + Joystick ←→ : Déplacer G/D',
+    'Grip + Joystick : Déplacer image',
     'Joystick press : Verrouiller',
     'A/X : Masquer',
     'B/Y : Aide'
@@ -530,19 +526,12 @@ function updateFromControllers(){
     
     if(!isLocked){
       if(gripPressed && !triggerPressed){
-        if(Math.abs(verticalAxis) > 0.2){
-          incrementScale(verticalAxis * -3.0 * elapsedTime);
-        }
-        if(Math.abs(horizontalAxis) > 0.2){
-          incrementRotation(horizontalAxis * 2.5 * elapsedTime);
-        }
-      } else if(triggerPressed && !gripPressed){
-        if(Math.abs(horizontalAxis) > 0.2){
-          moveOnWall(horizontalAxis * elapsedTime, 0);
+        if(Math.abs(verticalAxis) > 0.2 || Math.abs(horizontalAxis) > 0.2){
+          moveOnWall(horizontalAxis * elapsedTime, -verticalAxis * elapsedTime);
         }
       } else if(!gripPressed && !triggerPressed){
         if(Math.abs(verticalAxis) > 0.2){
-          moveOnWall(0, -verticalAxis * elapsedTime);
+          incrementScale(verticalAxis * -3.0 * elapsedTime);
         }
         if(Math.abs(horizontalAxis) > 0.2){
           incrementOpacity(horizontalAxis * 1.0 * elapsedTime);
