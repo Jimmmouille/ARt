@@ -24,9 +24,10 @@ html,body{margin:0;height:100%;overflow:hidden;background:#000}
     <li><span class="key">Grip + Trigger</span> Plaquer au mur</li>
     <li><span class="key">Joystick ⬆️⬇️</span> Zoom</li>
     <li><span class="key">Joystick ⬅️➡️</span> Opacité</li>
-    <li><span class="key">Grip + Joystick</span> Déplacer image</li>
+    <li><span class="key">Grip + Joystick</span> Déplacer</li>
+    <li><span class="key">Trigger + Joystick ⬅️➡️</span> Rotation</li>
     <li><span class="key">Joystick press</span> Verrouiller</li>
-    <li><span class="key">A/X</span> Masquer image</li>
+    <li><span class="key">A/X</span> Masquer</li>
     <li><span class="key">B/Y</span> Aide</li>
   </ul>
 </div>
@@ -151,7 +152,8 @@ function createInstructionsPanel(){
     'Grip + Trigger : Plaquer au mur',
     'Joystick ↑↓ : Zoom',
     'Joystick ←→ : Opacité',
-    'Grip + Joystick : Déplacer image',
+    'Grip + Joystick : Déplacer',
+    'Trigger + Joystick ←→ : Rotation',
     'Joystick press : Verrouiller',
     'A/X : Masquer',
     'B/Y : Aide'
@@ -528,6 +530,10 @@ function updateFromControllers(){
       if(gripPressed && !triggerPressed){
         if(Math.abs(verticalAxis) > 0.2 || Math.abs(horizontalAxis) > 0.2){
           moveOnWall(horizontalAxis * elapsedTime, -verticalAxis * elapsedTime);
+        }
+      } else if(triggerPressed && !gripPressed){
+        if(Math.abs(horizontalAxis) > 0.2){
+          incrementRotation(horizontalAxis * 2.5 * elapsedTime);
         }
       } else if(!gripPressed && !triggerPressed){
         if(Math.abs(verticalAxis) > 0.2){
