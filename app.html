@@ -528,7 +528,7 @@ function updateFromControllers(){
     if(!isLocked){
       if(gripPressed && !triggerPressed){
         if(Math.abs(verticalAxis) > 0.2){
-          incrementScale(verticalAxis * -2.0 * elapsedTime);
+          incrementScale(verticalAxis * -3.0 * elapsedTime);
         }
         if(Math.abs(horizontalAxis) > 0.2){
           incrementRotation(horizontalAxis * 2.5 * elapsedTime);
