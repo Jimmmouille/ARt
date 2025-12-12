@@ -21,15 +21,16 @@ html,body{margin:0;height:100%;overflow:hidden;background:#000}
 <div id="instructions">
   <h3>Commandes VR</h3>
   <ul>
-    <li><span class="key">Joystick ⬆️⬇️</span> Zoom (0.1x-20x)</li>
-    <li><span class="key">Joystick ⬅️➡️</span> Opacité</li>
-    <li><span class="key">Grip + Joystick ⬆️⬇️</span> Profondeur (repousser/avancer)</li>
-    <li><span class="key">Trigger</span> Repositionner manuel</li>
-    <li><span class="key">Grip + Trigger</span> Aimanter surface</li>
-    <li><span class="key">Joystick press</span> Verrouiller position</li>
+    <li><span class="key">Grip + Trigger</span> Plaquer au mur</li>
+    <li><span class="key">Joystick ⬆️⬇️</span> Déplacer haut/bas</li>
+    <li><span class="key">Joystick ⬅️➡️</span> Déplacer gauche/droite</li>
+    <li><span class="key">Grip + Joystick ⬆️⬇️</span> Zoom</li>
+    <li><span class="key">Grip + Joystick ⬅️➡️</span> Rotation</li>
+    <li><span class="key">Trigger + Joystick ⬆️⬇️</span> Opacité</li>
+    <li><span class="key">Joystick press</span> Verrouiller</li>
     <li><span class="key">A/X</span> Masquer image</li>
     <li><span class="key">B/Y</span> Masquer/afficher aide</li>
-    <li style="font-size:11px;color:#888;margin-top:4px;">💡 Maintenez Grip 2s pour réafficher l'aide</li>
+    <li style="font-size:11px;color:#888;margin-top:4px;">💡 Maintenez Grip 2s pour réafficher</li>
   </ul>
 </div>
 
@@ -69,6 +70,11 @@ let hitTestSourceRequested = false;
 let reticle = null;
 let previousGripPressed = false;
 let previousTriggerPressed = false;
+let currentRotation = 0;
+let wallNormal = new THREE.Vector3();
+let wallUp = new THREE.Vector3();
+let wallRight = new THREE.Vector3();
+let saveTimeout = null;
 
 function openDB(){
   return new Promise((resolve, reject)=>{
@@ -142,14 +148,14 @@ function createInstructionsPanel(){
   ctx.font = '18px system-ui';
   let y = 80;
   const lines = [
-    'Joystick ↑↓ : Zoom (0.1x-20x)',
-    'Joystick ←→ : Opacité',
-    'Grip + Joystick ↑↓ : Profondeur',
-    'Trigger : Repositionner manuel',
-    'Grip + Trigger : Aimanter surface',
+    'Grip + Trigger : Plaquer au mur',
+    'Joystick ↑↓ : Déplacer haut/bas',
+    'Joystick ←→ : Déplacer gauche/droite',
+    'Grip + Joystick ↑↓ : Zoom',
+    'Grip + Joystick ←→ : Rotation',
+    'Trigger + Joystick ↑↓ : Opacité',
     'Joystick press : Verrouiller',
     'A/X : Masquer image',
-    'Grip + A/X : Déplacer ce panneau',
     'B/Y : Masquer/afficher aide'
   ];
   
@@ -267,7 +273,41 @@ function incrementScale(delta){
   currentScale = Math.min(Math.max(currentScale, 0.1), 20.0);
   if(group){
     group.scale.set(currentScale, currentScale, currentScale);
+    debouncedSave();
   }
+}
+
+function debouncedSave(){
+  if(saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(() => {
+    savePosition();
+  }, 500);
+}
+
+function incrementRotation(delta){
+  currentRotation += delta;
+  if(group && wallNormal.lengthSq() > 0){
+    const rotQuat = new THREE.Quaternion();
+    rotQuat.setFromAxisAngle(wallNormal, currentRotation);
+    const baseQuat = new THREE.Quaternion();
+    baseQuat.setFromAxisAngle(wallRight, Math.PI / 2);
+    group.quaternion.copy(baseQuat).multiply(rotQuat);
+    referenceQuaternion.copy(group.quaternion);
+    debouncedSave();
+  }
+}
+
+function moveOnWall(horizontal, vertical){
+  if(!group || wallNormal.lengthSq() === 0) return;
+  
+  const moveSpeed = 0.3;
+  const moveVec = new THREE.Vector3();
+  moveVec.addScaledVector(wallRight, horizontal * moveSpeed);
+  moveVec.addScaledVector(wallUp, vertical * moveSpeed);
+  
+  group.position.add(moveVec);
+  referencePosition.copy(group.position);
+  debouncedSave();
 }
 
 function incrementOpacity(delta){
@@ -275,18 +315,11 @@ function incrementOpacity(delta){
   currentOpacity = Math.min(Math.max(currentOpacity, 0.0), 1.0);
   if(mesh){
     mesh.material.opacity = currentOpacity;
+    debouncedSave();
   }
 }
 
-function incrementDepth(delta){
-  currentDepth += delta;
-  currentDepth = Math.min(Math.max(currentDepth, -5.0), 5.0);
-  if(group){
-    const offset = new THREE.Vector3(0, 0, currentDepth);
-    offset.applyQuaternion(referenceQuaternion);
-    group.position.copy(referencePosition).add(offset);
-  }
-}
+
 
 await createOrUpdateMesh();
 
@@ -304,7 +337,11 @@ function savePosition(){
     position: group.position.toArray(),
     quaternion: group.quaternion.toArray(),
     scale: currentScale,
-    opacity: currentOpacity
+    opacity: currentOpacity,
+    rotation: currentRotation,
+    wallNormal: wallNormal.toArray(),
+    wallUp: wallUp.toArray(),
+    wallRight: wallRight.toArray()
   };
   localStorage.setItem(POSITION_KEY, JSON.stringify(data));
 }
@@ -325,6 +362,14 @@ function loadPosition(){
       if(data.opacity !== undefined){
         currentOpacity = data.opacity;
         if(mesh) mesh.material.opacity = currentOpacity;
+      }
+      if(data.rotation !== undefined){
+        currentRotation = data.rotation;
+      }
+      if(data.wallNormal){
+        wallNormal.fromArray(data.wallNormal);
+        wallUp.fromArray(data.wallUp);
+        wallRight.fromArray(data.wallRight);
       }
       return true;
     }catch(e){
@@ -446,12 +491,18 @@ function updateFromControllers(){
         const scale = new THREE.Vector3();
         reticleMatrix.decompose(position, quaternion, scale);
         
+        wallNormal.set(0, 1, 0).applyQuaternion(quaternion);
+        wallUp.set(0, 0, -1).applyQuaternion(quaternion);
+        wallRight.set(1, 0, 0).applyQuaternion(quaternion);
+        
         group.position.copy(position);
-        group.quaternion.copy(quaternion);
-        group.rotateX(Math.PI / 2);
+        const baseQuat = new THREE.Quaternion();
+        baseQuat.setFromAxisAngle(wallRight, Math.PI / 2);
+        group.quaternion.copy(baseQuat);
         
         referencePosition.copy(group.position);
         referenceQuaternion.copy(group.quaternion);
+        currentRotation = 0;
         currentDepth = 0;
         
         savePosition();
@@ -475,34 +526,23 @@ function updateFromControllers(){
     const verticalAxis = axes.length >= 4 ? axes[3] : (axes.length >= 2 ? axes[1] : 0);
     const horizontalAxis = axes.length >= 4 ? axes[2] : (axes.length >= 2 ? axes[0] : 0);
     
-    if(!isLocked && gripPressed){
-      if(verticalAxis < -0.7){
-        incrementDepth(-1.0 * elapsedTime);
-      } else if(verticalAxis > 0.7){
-        incrementDepth(1.0 * elapsedTime);
+    if(!isLocked){
+      if(gripPressed && !triggerPressed){
+        if(Math.abs(verticalAxis) > 0.3){
+          incrementScale(verticalAxis * -1.5 * elapsedTime);
+        }
+        if(Math.abs(horizontalAxis) > 0.3){
+          incrementRotation(horizontalAxis * 2.0 * elapsedTime);
+        }
+      } else if(triggerPressed && !gripPressed){
+        if(Math.abs(verticalAxis) > 0.3){
+          incrementOpacity(verticalAxis * -1.0 * elapsedTime);
+        }
+      } else if(!gripPressed && !triggerPressed){
+        if(Math.abs(verticalAxis) > 0.3 || Math.abs(horizontalAxis) > 0.3){
+          moveOnWall(horizontalAxis * elapsedTime, -verticalAxis * elapsedTime);
+        }
       }
-    } else if(!gripPressed) {
-      if(verticalAxis < -0.7){
-        incrementScale(1.0 * elapsedTime);
-      } else if(verticalAxis > 0.7){
-        incrementScale(-1.0 * elapsedTime);
-      }
-    }
-    
-    if(horizontalAxis > 0.7){
-      incrementOpacity(1.0 * elapsedTime);
-    } else if(horizontalAxis < -0.7){
-      incrementOpacity(-1.0 * elapsedTime);
-    }
-    
-    if(!isLocked && triggerPressed && !gripPressed){
-      const controllerToUse = renderer.xr.getController(i);
-      const offsetPosition = controllerToUse.localToWorld(new THREE.Vector3(0, 0, 0.045));
-      group.position.copy(offsetPosition);
-      group.setRotationFromQuaternion(controllerToUse.quaternion);
-      referencePosition.copy(group.position);
-      referenceQuaternion.copy(group.quaternion);
-      currentDepth = 0;
     }
     
     if(buttons.length > 3 && buttons[3].pressed){
