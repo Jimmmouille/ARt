@@ -287,10 +287,14 @@ function debouncedSave(){
 function incrementRotation(delta){
   currentRotation += delta;
   if(group && wallNormal.lengthSq() > 0){
+    const lookAtMatrix = new THREE.Matrix4();
+    lookAtMatrix.lookAt(new THREE.Vector3(), wallNormal.clone().negate(), wallUp);
+    const baseQuat = new THREE.Quaternion();
+    baseQuat.setFromRotationMatrix(lookAtMatrix);
+    
     const rotQuat = new THREE.Quaternion();
     rotQuat.setFromAxisAngle(wallNormal, currentRotation);
-    const baseQuat = new THREE.Quaternion();
-    baseQuat.setFromAxisAngle(wallRight, Math.PI / 2);
+    
     group.quaternion.copy(baseQuat).multiply(rotQuat);
     referenceQuaternion.copy(group.quaternion);
     debouncedSave();
@@ -491,14 +495,15 @@ function updateFromControllers(){
         const scale = new THREE.Vector3();
         reticleMatrix.decompose(position, quaternion, scale);
         
-        wallNormal.set(0, 1, 0).applyQuaternion(quaternion);
-        wallUp.set(0, 0, -1).applyQuaternion(quaternion);
-        wallRight.set(1, 0, 0).applyQuaternion(quaternion);
+        wallNormal.set(0, 1, 0).applyQuaternion(quaternion).normalize();
+        wallUp.set(0, 0, -1).applyQuaternion(quaternion).normalize();
+        wallRight.crossVectors(wallUp, wallNormal).normalize();
         
-        group.position.copy(position);
-        const baseQuat = new THREE.Quaternion();
-        baseQuat.setFromAxisAngle(wallRight, Math.PI / 2);
-        group.quaternion.copy(baseQuat);
+        const lookAtMatrix = new THREE.Matrix4();
+        lookAtMatrix.lookAt(new THREE.Vector3(), wallNormal.clone().negate(), wallUp);
+        group.quaternion.setFromRotationMatrix(lookAtMatrix);
+        
+        group.position.copy(position).add(wallNormal.clone().multiplyScalar(0.01));
         
         referencePosition.copy(group.position);
         referenceQuaternion.copy(group.quaternion);
