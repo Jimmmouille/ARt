@@ -536,10 +536,12 @@ function updateFromControllers(){
           incrementRotation(horizontalAxis * 2.5 * elapsedTime);
         }
       } else if(!gripPressed && !triggerPressed){
-        if(Math.abs(verticalAxis) > 0.2){
+        const absV = Math.abs(verticalAxis);
+        const absH = Math.abs(horizontalAxis);
+        
+        if(absV > 0.2 && absV > absH){
           incrementScale(verticalAxis * -3.0 * elapsedTime);
-        }
-        if(Math.abs(horizontalAxis) > 0.2){
+        } else if(absH > 0.2 && absH > absV){
           incrementOpacity(horizontalAxis * 1.0 * elapsedTime);
         }
       }
