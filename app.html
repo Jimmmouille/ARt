@@ -35,6 +35,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:#000}
 
 <div id="lockIndicator" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:24px 32px;background:rgba(255,193,7,.95);border-radius:16px;color:#000;font-family:system-ui;font-size:20px;font-weight:bold;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,.3);">🔒 Position verrouillée</div>
 
+<div id="unlockIndicator" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:24px 32px;background:rgba(76,175,80,.95);border-radius:16px;color:#fff;font-family:system-ui;font-size:20px;font-weight:bold;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,.3);">🔓 Position déverrouillée</div>
+
 <div id="snapIndicator" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:24px 32px;background:rgba(76,175,80,.95);border-radius:16px;color:#fff;font-family:system-ui;font-size:20px;font-weight:bold;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,.3);">📍 Position sauvegardée</div>
 
 <script type="module">
@@ -62,6 +64,7 @@ let previousDidPressHideImage = false;
 let previousDidPressHideInstructions = false;
 const instructionsEl = document.getElementById('instructions');
 let lockIndicatorEl = null;
+let unlockIndicatorEl = null;
 let snapIndicatorEl = null;
 let instructionsPanel = null;
 let hitTestSource = null;
@@ -321,6 +324,7 @@ function incrementOpacity(delta){
 await createOrUpdateMesh();
 
 lockIndicatorEl = document.getElementById('lockIndicator');
+unlockIndicatorEl = document.getElementById('unlockIndicator');
 snapIndicatorEl = document.getElementById('snapIndicator');
 
 window.addEventListener('resize', ()=>{
@@ -574,11 +578,18 @@ function updateFromControllers(){
   
   if(shouldToggleLock){
     isLocked = !isLocked;
-    if(lockIndicatorEl){
-      lockIndicatorEl.style.display = isLocked ? 'block' : 'none';
-      if(isLocked){
+    if(isLocked){
+      if(lockIndicatorEl){
+        lockIndicatorEl.style.display = 'block';
         setTimeout(() => {
-          if(lockIndicatorEl && isLocked) lockIndicatorEl.style.display = 'none';
+          if(lockIndicatorEl) lockIndicatorEl.style.display = 'none';
+        }, 2000);
+      }
+    } else {
+      if(unlockIndicatorEl){
+        unlockIndicatorEl.style.display = 'block';
+        setTimeout(() => {
+          if(unlockIndicatorEl) unlockIndicatorEl.style.display = 'none';
         }, 2000);
       }
     }
