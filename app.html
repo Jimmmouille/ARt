@@ -285,20 +285,14 @@ function debouncedSave(){
 }
 
 function incrementRotation(delta){
-  currentRotation += delta;
-  if(group && wallNormal.lengthSq() > 0){
-    const lookAtMatrix = new THREE.Matrix4();
-    lookAtMatrix.lookAt(new THREE.Vector3(), wallNormal.clone().negate(), wallUp);
-    const baseQuat = new THREE.Quaternion();
-    baseQuat.setFromRotationMatrix(lookAtMatrix);
-    
-    const rotQuat = new THREE.Quaternion();
-    rotQuat.setFromAxisAngle(wallNormal, currentRotation);
-    
-    group.quaternion.copy(baseQuat).multiply(rotQuat);
-    referenceQuaternion.copy(group.quaternion);
-    debouncedSave();
-  }
+  if(!group || wallNormal.lengthSq() === 0) return;
+  
+  const rotQuat = new THREE.Quaternion();
+  rotQuat.setFromAxisAngle(wallNormal.clone().normalize(), delta);
+  
+  group.quaternion.premultiply(rotQuat);
+  referenceQuaternion.copy(group.quaternion);
+  debouncedSave();
 }
 
 function moveOnWall(horizontal, vertical){
@@ -533,18 +527,18 @@ function updateFromControllers(){
     
     if(!isLocked){
       if(gripPressed && !triggerPressed){
-        if(Math.abs(verticalAxis) > 0.3){
-          incrementScale(verticalAxis * -1.5 * elapsedTime);
+        if(Math.abs(verticalAxis) > 0.2){
+          incrementScale(verticalAxis * -2.0 * elapsedTime);
         }
-        if(Math.abs(horizontalAxis) > 0.3){
-          incrementRotation(horizontalAxis * 2.0 * elapsedTime);
+        if(Math.abs(horizontalAxis) > 0.2){
+          incrementRotation(horizontalAxis * 2.5 * elapsedTime);
         }
       } else if(triggerPressed && !gripPressed){
-        if(Math.abs(verticalAxis) > 0.3){
+        if(Math.abs(verticalAxis) > 0.2){
           incrementOpacity(verticalAxis * -1.0 * elapsedTime);
         }
       } else if(!gripPressed && !triggerPressed){
-        if(Math.abs(verticalAxis) > 0.3 || Math.abs(horizontalAxis) > 0.3){
+        if(Math.abs(verticalAxis) > 0.2 || Math.abs(horizontalAxis) > 0.2){
           moveOnWall(horizontalAxis * elapsedTime, -verticalAxis * elapsedTime);
         }
       }
