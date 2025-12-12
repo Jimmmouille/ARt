@@ -24,7 +24,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:#000}
     <li><span class="key">Joystick ⬆️⬇️</span> Zoom (0.1x-20x)</li>
     <li><span class="key">Joystick ⬅️➡️</span> Opacité</li>
     <li><span class="key">Grip + Joystick ⬆️⬇️</span> Profondeur (repousser/avancer)</li>
-    <li><span class="key">Trigger</span> Repositionner</li>
+    <li><span class="key">Trigger</span> Repositionner manuel</li>
+    <li><span class="key">Grip + Trigger</span> Aimanter surface</li>
     <li><span class="key">Joystick press</span> Verrouiller position</li>
     <li><span class="key">A/X</span> Masquer image</li>
     <li><span class="key">B/Y</span> Masquer/afficher aide</li>
@@ -34,6 +35,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:#000}
 
 <div id="lockIndicator" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:24px 32px;background:rgba(255,193,7,.95);border-radius:16px;color:#000;font-family:system-ui;font-size:20px;font-weight:bold;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,.3);">🔒 Position verrouillée</div>
 
+<div id="snapIndicator" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:24px 32px;background:rgba(76,175,80,.95);border-radius:16px;color:#fff;font-family:system-ui;font-size:20px;font-weight:bold;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,.3);">📍 Position sauvegardée</div>
+
 <script type="module">
 import * as THREE from 'https://unpkg.com/three@0.147.0/build/three.module.js';
 import { ARButton } from 'https://unpkg.com/three@0.147.0/examples/jsm/webxr/ARButton.js';
@@ -41,6 +44,7 @@ import { ARButton } from 'https://unpkg.com/three@0.147.0/examples/jsm/webxr/ARB
 const DB_NAME = 'stencil-db';
 const STORE = 'images';
 const KEY = 'current';
+const POSITION_KEY = 'stencil-ar-position';
 
 let currentScale = 1.0;
 let currentOpacity = 1.0;
@@ -58,7 +62,13 @@ let previousDidPressHideImage = false;
 let previousDidPressHideInstructions = false;
 const instructionsEl = document.getElementById('instructions');
 let lockIndicatorEl = null;
+let snapIndicatorEl = null;
 let instructionsPanel = null;
+let hitTestSource = null;
+let hitTestSourceRequested = false;
+let reticle = null;
+let previousGripPressed = false;
+let previousTriggerPressed = false;
 
 function openDB(){
   return new Promise((resolve, reject)=>{
@@ -91,7 +101,7 @@ renderer.xr.setFoveation(0);
 document.body.appendChild(renderer.domElement);
 
 document.body.appendChild(ARButton.createButton(renderer, { 
-  requiredFeatures:['local-floor'],
+  requiredFeatures:['local-floor', 'hit-test'],
   optionalFeatures:['depth-sensing']
 }));
 
@@ -135,7 +145,8 @@ function createInstructionsPanel(){
     'Joystick ↑↓ : Zoom (0.1x-20x)',
     'Joystick ←→ : Opacité',
     'Grip + Joystick ↑↓ : Profondeur',
-    'Trigger : Repositionner',
+    'Trigger : Repositionner manuel',
+    'Grip + Trigger : Aimanter surface',
     'Joystick press : Verrouiller',
     'A/X : Masquer image',
     'Grip + A/X : Déplacer ce panneau',
@@ -171,6 +182,18 @@ function createInstructionsPanel(){
 
 instructionsPanel = createInstructionsPanel();
 scene.add(instructionsPanel);
+
+const reticleGeometry = new THREE.RingGeometry(0.03, 0.04, 32);
+reticleGeometry.rotateX(-Math.PI / 2);
+const reticleMaterial = new THREE.MeshBasicMaterial({ 
+  color: 0x00ff00, 
+  transparent: true, 
+  opacity: 0.8 
+});
+reticle = new THREE.Mesh(reticleGeometry, reticleMaterial);
+reticle.visible = false;
+reticle.matrixAutoUpdate = false;
+scene.add(reticle);
 
 async function loadTextureFromIndexedDB(){
   const record = await idbGet(KEY);
@@ -268,12 +291,132 @@ function incrementDepth(delta){
 await createOrUpdateMesh();
 
 lockIndicatorEl = document.getElementById('lockIndicator');
+snapIndicatorEl = document.getElementById('snapIndicator');
 
 window.addEventListener('resize', ()=>{
   camera.aspect = window.innerWidth/window.innerHeight; 
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+function savePosition(){
+  const data = {
+    position: group.position.toArray(),
+    quaternion: group.quaternion.toArray(),
+    scale: currentScale,
+    opacity: currentOpacity
+  };
+  localStorage.setItem(POSITION_KEY, JSON.stringify(data));
+}
+
+function loadPosition(){
+  const saved = localStorage.getItem(POSITION_KEY);
+  if(saved){
+    try{
+      const data = JSON.parse(saved);
+      group.position.fromArray(data.position);
+      group.quaternion.fromArray(data.quaternion);
+      referencePosition.copy(group.position);
+      referenceQuaternion.copy(group.quaternion);
+      if(data.scale){
+        currentScale = data.scale;
+        group.scale.set(currentScale, currentScale, currentScale);
+      }
+      if(data.opacity !== undefined){
+        currentOpacity = data.opacity;
+        if(mesh) mesh.material.opacity = currentOpacity;
+      }
+      return true;
+    }catch(e){
+      console.warn('Failed to load position:', e);
+    }
+  }
+  return false;
+}
+
+function showSnapFeedback(){
+  if(snapIndicatorEl){
+    snapIndicatorEl.style.display = 'block';
+    setTimeout(() => {
+      if(snapIndicatorEl) snapIndicatorEl.style.display = 'none';
+    }, 2000);
+  }
+  
+  reticle.material.color.setHex(0x00ff00);
+  setTimeout(() => {
+    reticle.material.color.setHex(0x00ff00);
+  }, 300);
+  
+  const session = renderer.xr.getSession();
+  if(session && session.inputSources){
+    for(const source of session.inputSources){
+      if(source.gamepad && source.gamepad.hapticActuators && source.gamepad.hapticActuators.length > 0){
+        source.gamepad.hapticActuators[0].pulse(0.5, 100);
+      }
+    }
+  }
+}
+
+renderer.xr.addEventListener('sessionstart', async () => {
+  const session = renderer.xr.getSession();
+  session.addEventListener('end', () => {
+    hitTestSource = null;
+    hitTestSourceRequested = false;
+  });
+  
+  if(!hitTestSourceRequested){
+    hitTestSourceRequested = true;
+    const viewerSpace = await session.requestReferenceSpace('viewer');
+    session.requestHitTestSource({ space: viewerSpace }).then((source) => {
+      hitTestSource = source;
+    }).catch((err) => {
+      console.warn('Hit test not supported:', err);
+    });
+  }
+  
+  loadPosition();
+});
+
+renderer.xr.addEventListener('sessionend', () => {
+  hitTestSource = null;
+  hitTestSourceRequested = false;
+});
+
+function updateHitTest(frame){
+  if(!hitTestSource) return;
+  
+  const session = renderer.xr.getSession();
+  if(!session) return;
+  
+  let gripPressedAny = false;
+  for(let i = 0; i < session.inputSources.length; i++){
+    const source = session.inputSources[i];
+    if(!source.gamepad) continue;
+    const buttons = source.gamepad.buttons || [];
+    if(buttons.length > 1 && buttons[1].pressed){
+      gripPressedAny = true;
+      break;
+    }
+  }
+  
+  if(!gripPressedAny){
+    reticle.visible = false;
+    return;
+  }
+  
+  const hitTestResults = frame.getHitTestResults(hitTestSource);
+  if(hitTestResults.length > 0){
+    const hit = hitTestResults[0];
+    const referenceSpace = renderer.xr.getReferenceSpace();
+    const pose = hit.getPose(referenceSpace);
+    if(pose){
+      reticle.visible = true;
+      reticle.matrix.fromArray(pose.transform.matrix);
+    }
+  }else{
+    reticle.visible = false;
+  }
+}
 
 function updateFromControllers(){
   const session = renderer.xr.getSession();
@@ -293,6 +436,31 @@ function updateFromControllers(){
     const buttons = gamepad.buttons || [];
     
     const gripPressed = buttons.length > 1 && buttons[1].pressed;
+    const triggerPressed = buttons.length > 0 && buttons[0].pressed;
+    
+    if(gripPressed && triggerPressed && reticle.visible && !isLocked){
+      if(!previousGripPressed || !previousTriggerPressed){
+        const reticleMatrix = new THREE.Matrix4().copy(reticle.matrix);
+        const position = new THREE.Vector3();
+        const quaternion = new THREE.Quaternion();
+        const scale = new THREE.Vector3();
+        reticleMatrix.decompose(position, quaternion, scale);
+        
+        group.position.copy(position);
+        group.quaternion.copy(quaternion);
+        group.rotateX(Math.PI / 2);
+        
+        referencePosition.copy(group.position);
+        referenceQuaternion.copy(group.quaternion);
+        currentDepth = 0;
+        
+        savePosition();
+        showSnapFeedback();
+      }
+    }
+    
+    previousGripPressed = gripPressed;
+    previousTriggerPressed = triggerPressed;
     
     if(gripPressed){
       gripHoldTime += elapsedTime;
@@ -327,7 +495,7 @@ function updateFromControllers(){
       incrementOpacity(-1.0 * elapsedTime);
     }
     
-    if(!isLocked && buttons.length > 0 && buttons[0].pressed){
+    if(!isLocked && triggerPressed && !gripPressed){
       const controllerToUse = renderer.xr.getController(i);
       const offsetPosition = controllerToUse.localToWorld(new THREE.Vector3(0, 0, 0.045));
       group.position.copy(offsetPosition);
@@ -390,7 +558,10 @@ function updateFromControllers(){
   }
 }
 
-renderer.setAnimationLoop(()=>{
+renderer.setAnimationLoop((timestamp, frame)=>{
+  if(frame){
+    updateHitTest(frame);
+  }
   updateFromControllers();
   renderer.render(scene, camera);
 });
